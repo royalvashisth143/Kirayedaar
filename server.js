@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Database Setup (SQLite file-based)
+// Database Setup
 const dbPath = path.resolve(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) console.error('Database opening error: ', err.message);
@@ -43,21 +43,21 @@ db.serialize(() => {
 function generateReferralCode(name) {
     const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
     const randomHex = crypto.randomBytes(2).toString('hex').toUpperCase();
-    return `${cleanName || 'USR'}-${randomHex}`;
+    return cleanName + '-' + randomHex;
 }
 
 // ---------------- USER ROUTES ---------------- //
 
-// 1. Referral Link Click Handler (`/ref/CODE`)
 app.get('/ref/:code', (req, res) => {
-    const { code } = req.params;
+    const code = req.params.code;
     res.cookie('ref_code', code, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: true });
     res.redirect('/');
 });
 
-// 2. Signup API Endpoint
 app.post('/api/signup', (req, res) => {
-    const { name, email } = req.body;
+    const name = req.body.name;
+    const email = req.body.email;
+    
     if (!name || !email) {
         return res.status(400).json({ error: "Name and Email are required!" });
     }
@@ -66,11 +66,11 @@ app.post('/api/signup', (req, res) => {
     const refCodeFromCookie = req.cookies.ref_code || null;
 
     db.serialize(() => {
-        let findReferrerQuery = `SELECT id FROM users WHERE referral_code = ?`;
+        let findReferrerQuery = "SELECT id FROM users WHERE referral_code = ?";
         db.get(findReferrerQuery, [refCodeFromCookie], (err, referrer) => {
             let referredById = referrer ? referrer.id : null;
 
-            let insertUserQuery = `INSERT INTO users (name, email, referral_code, referred_by) VALUES (?, ?, ?, ?)`;
+            let insertUserQuery = "INSERT INTO users (name, email, referral_code, referred_by) VALUES (?, ?, ?, ?)";
             db.run(insertUserQuery, [name, email, referralCode, referredById], function(err) {
                 if (err) {
                     return res.status(400).json({ error: "Email already registered or error occurred!" });
@@ -80,65 +80,49 @@ app.post('/api/signup', (req, res) => {
 
                 if (referredById) {
                     const rewardAmount = 50.0; 
-                    db.run(`INSERT INTO referral_rewards (referrer_id, referee_id, reward_amount, status) VALUES (?, ?, ?, ?)`, 
+                    db.run("INSERT INTO referral_rewards (referrer_id, referee_id, reward_amount, status) VALUES (?, ?, ?, ?)", 
                         [referredById, newUserId, rewardAmount, 'Approved']);
                     
-                    db.run(`UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?`, [rewardAmount, referredById]);
+                    db.run("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?", [rewardAmount, referredById]);
                 }
 
                 res.json({ 
                     success: true, 
                     userId: newUserId, 
-                    name, 
-                    referralCode,
-                    referralLink: `${req.protocol}://${req.get('host')}/ref/${referralCode}`
+                    name: name, 
+                    referralCode: referralCode,
+                    referralLink: req.protocol + '://' + req.get('host') + '/ref/' + referralCode
                 });
             });
         });
     });
 });
 
-// 3. Get User Stats API
 app.get('/api/user/:id', (req, res) => {
     const userId = req.params.id;
-    db.get(`SELECT id, name, email, referral_code, wallet_balance FROM users WHERE id = ?`, [userId], (err, user) => {
+    db.get("SELECT id, name, email, referral_code, wallet_balance FROM users WHERE id = ?", [userId], (err, user) => {
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        db.all(`SELECT r.referee_id, u.name as referee_name, r.reward_amount, r.status 
-                FROM referral_rewards r 
-                JOIN users u ON r.referee_id = u.id 
-                WHERE r.referrer_id = ?`, [userId], (err, referrals) => {
-            res.json({ user, referrals });
+        db.all("SELECT r.referee_id, u.name as referee_name, r.reward_amount, r.status FROM referral_rewards r JOIN users u ON r.referee_id = u.id WHERE r.referrer_id = ?", [userId], (err, referrals) => {
+            res.json({ user: user, referrals: referrals });
         });
     });
 });
-
 
 // ---------------- ADMIN API ROUTES ---------------- //
 
-// Get all data for admin dashboard
 app.get('/api/admin/data', (req, res) => {
-    db.all(`SELECT u.id, u.name, u.email, u.referral_code, u.wallet_balance, 
-            (SELECT name FROM users WHERE id = u.referred_by) as referred_by_name 
-            FROM users u ORDER BY u.id DESC`, [], (err, users) => {
-        
-        db.all(`SELECT r.id, 
-                (SELECT name FROM users WHERE id = r.referrer_id) as referrer_name, 
-                (SELECT name FROM users WHERE id = r.referee_id) as referee_name, 
-                r.reward_amount, r.status 
-                FROM referral_rewards r ORDER BY r.id DESC`, [], (err, rewards) => {
-            
-            res.json({ users, rewards });
+    db.all("SELECT u.id, u.name, u.email, u.referral_code, u.wallet_balance, (SELECT name FROM users WHERE id = u.referred_by) as referred_by_name FROM users u ORDER BY u.id DESC", [], (err, users) => {
+        db.all("SELECT r.id, (SELECT name FROM users WHERE id = r.referrer_id) as referrer_name, (SELECT name FROM users WHERE id = r.referee_id) as referee_name, r.reward_amount, r.status FROM referral_rewards r ORDER BY r.id DESC", [], (err, rewards) => {
+            res.json({ users: users, rewards: rewards });
         });
     });
 });
 
+// ---------------- FRONTEND UI ---------------- //
 
-// ---------------- FRONTEND (USER & ADMIN UI) ---------------- //
-
-// User Home / Signup / Dashboard UI
 app.get('/', (req, res) => {
-    res.send(`
+    const html = `
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -228,7 +212,7 @@ app.get('/', (req, res) => {
                     const response = await fetch('/api/signup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, email })
+                        body: JSON.stringify({ name: name, email: email })
                     });
                     const data = await response.json();
 
@@ -254,7 +238,12 @@ app.get('/', (req, res) => {
 
                         const listEl = document.getElementById('referral-list');
                         if(data.referrals.length > 0) {
-                            listEl.innerHTML = data.referrals.map(r => \`<li>\${r.referee_name} - Earned ₹\${r.reward_amount} (\${r.status})</li>\`).join('');
+                            let htmlContent = '';
+                            for(let i = 0; i < data.referrals.length; i++) {
+                                let r = data.referrals[i];
+                                htmlContent += '<li>' + r.referee_name + ' - Earned ₹' + r.reward_amount + ' (' + r.status + ')</li>';
+                            }
+                            listEl.innerHTML = htmlContent;
                         } else {
                             listEl.innerHTML = '<li>No referrals yet. Share your link!</li>';
                         }
@@ -270,12 +259,12 @@ app.get('/', (req, res) => {
             </script>
         </body>
         </html>
-    `);
+    `;
+    res.send(html);
 });
 
-// Admin Panel UI Route (`/admin`)
 app.get('/admin', (req, res) => {
-    res.send(`
+    const adminHtml = `
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -337,35 +326,39 @@ app.get('/admin', (req, res) => {
                     const response = await fetch('/api/admin/data');
                     const data = await response.json();
 
-                    // Users Table populate karein
                     const usersEl = document.getElementById('users-table');
                     if(data.users.length > 0) {
-                        usersEl.innerHTML = data.users.map(u => \`
-                            <tr>
-                                <td>\${u.id}</td>
-                                <td>\${u.name}</td>
-                                <td>\${u.email}</td>
-                                <td><code>\${u.referral_code}</code></td>
-                                <td>\${u.referred_by_name || 'Direct Signup'}</td>
-                                <td>₹\${u.wallet_balance}</td>
-                            </tr>
-                        \`).join('');
+                        let usersHtml = '';
+                        for(let i = 0; i < data.users.length; i++) {
+                            let u = data.users[i];
+                            usersHtml += '<tr>' +
+                                '<td>' + u.id + '</td>' +
+                                '<td>' + u.name + '</td>' +
+                                '<td>' + u.email + '</td>' +
+                                '<td><code>' + u.referral_code + '</code></td>' +
+                                '<td>' + (u.referred_by_name || 'Direct Signup') + '</td>' +
+                                '<td>₹' + u.wallet_balance + '</td>' +
+                            '</tr>';
+                        }
+                        usersEl.innerHTML = usersHtml;
                     } else {
                         usersEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">No users found.</td></tr>';
                     }
 
-                    // Rewards Table populate karein
                     const rewardsEl = document.getElementById('rewards-table');
                     if(data.rewards.length > 0) {
-                        rewardsEl.innerHTML = data.rewards.map(r => \`
-                            <tr>
-                                <td>\${r.id}</td>
-                                <td>\<b>\${r.referrer_name}</b></td>
-                                <td>\${r.referee_name}</td>
-                                <td>₹\${r.reward_amount}</td>
-                                <td><span class="badge">\${r.status}</span></td>
-                            </tr>
-                        \`).join('');
+                        let rewardsHtml = '';
+                        for(let i = 0; i < data.rewards.length; i++) {
+                            let r = data.rewards[i];
+                            rewardsHtml += '<tr>' +
+                                '<td>' + r.id + '</td>' +
+                                '<td><strong>' + r.referrer_name + '</strong></td>' +
+                                '<td>' + r.referee_name + '</td>' +
+                                '<td>₹' + r.reward_amount + '</td>' +
+                                '<td><span class="badge">' + r.status + '</span></td>' +
+                            '</tr>';
+                        }
+                        rewardsEl.innerHTML = rewardsHtml;
                     } else {
                         rewardsEl.innerHTML = '<tr><td colspan="5" style="text-align:center;">No referral rewards yet.</td></tr>';
                     }
@@ -375,10 +368,10 @@ app.get('/admin', (req, res) => {
             </script>
         </body>
         </html>
-    `);
+    `;
+    res.send(adminHtml);
 });
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port `${PORT}`);
+    console.log("Server is running on port " + PORT);
 });
-        
