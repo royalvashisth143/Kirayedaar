@@ -1,0 +1,14 @@
+{
+  "name": "kiyayedaar",
+  "version": "1.0.0",
+  "description": "Complete Referral & Tracking System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}
