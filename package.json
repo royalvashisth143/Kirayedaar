@@ -1,8 +1,11 @@
 {
-  "name": "kiyayedaar",
+  "name": "referral-system-app",
   "version": "1.0.0",
-  "description": "Live Your Home Dreams With Us",
+  "description": "Complete Referral & Tracking System",
   "main": "server.js",
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "start": "node server.js"
   },
