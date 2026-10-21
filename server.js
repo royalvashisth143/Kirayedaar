@@ -494,3 +494,122 @@ app.get('/admin', (req, res) => {
     `;
     res.send(adminHtml);
 });
+app.get('/admin', (req, res) => {
+    const adminHtml = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Admin Panel - Referral Management</title>
+            <style>
+                body { font-family: Arial, sans-serif; background: #f8f9fa; margin: 0; padding: 10px; color: #333; }
+                .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+                .header-flex { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+                h2 { color: #343a40; margin: 0; font-size: 20px; }
+                .back-btn { background: #6c757d; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: bold; }
+                .back-btn:hover { background: #5a6268; }
+                h3 { margin-top: 20px; color: #007bff; font-size: 16px; }
+                .table-responsive { width: 100%; overflow-x: auto; margin-top: 10px; }
+                table { width: 100%; border-collapse: collapse; min-width: 600px; }
+                th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; font-size: 13px; white-space: nowrap; }
+                th { background-color: #007bff; color: white; }
+                tr:nth-child(even) { background-color: #f2f2f2; }
+                .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: #28a745; color: white; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header-flex">
+                    <h2>🛠️ Admin Dashboard</h2>
+                    <a href="/" class="back-btn">← Back to App</a>
+                </div>
+
+                <h3>All Registered Users</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Referral Code</th>
+                                <th>Referred By</th>
+                                <th>Wallet Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table">
+                            <tr><td colspan="6" style="text-align:center;">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Referral Transactions & Rewards</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Referrer</th>
+                                <th>Referee</th>
+                                <th>Reward Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rewards-table">
+                            <tr><td colspan="5" style="text-align:center;">Loading rewards...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <script>
+                async function fetchAdminData() {
+                    const response = await fetch('/api/admin/data');
+                    const data = await response.json();
+
+                    const usersEl = document.getElementById('users-table');
+                    if(data.users.length > 0) {
+                        let usersHtml = '';
+                        for(let i = 0; i < data.users.length; i++) {
+                            let u = data.users[i];
+                            usersHtml += '<tr>' +
+                                '<td>' + u.id + '</td>' +
+                                '<td>' + u.name + '</td>' +
+                                '<td>' + u.email + '</td>' +
+                                '<td><code>' + u.referral_code + '</code></td>' +
+                                '<td>' + (u.referred_by_name || 'Direct Signup') + '</td>' +
+                                '<td>₹' + u.wallet_balance + '</td>' +
+                            '</tr>';
+                        }
+                        usersEl.innerHTML = usersHtml;
+                    } else {
+                        usersEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">No users found.</td></tr>';
+                    }
+
+                    const rewardsEl = document.getElementById('rewards-table');
+                    if(data.rewards.length > 0) {
+                        let rewardsHtml = '';
+                        for(let i = 0; i < data.rewards.length; i++) {
+                            let r = data.rewards[i];
+                            rewardsHtml += '<tr>' +
+                                '<td>' + r.id + '</td>' +
+                                '<td><strong>' + r.referrer_name + '</strong></td>' +
+                                '<td>' + r.referee_name + '</td>' +
+                                '<td>₹' + r.reward_amount + '</td>' +
+                                '<td><span class="badge">' + r.status + '</span></td>' +
+                            '</tr>';
+                        }
+                        rewardsEl.innerHTML = rewardsHtml;
+                    } else {
+                        rewardsEl.innerHTML = '<tr><td colspan="5" style="text-align:center;">No referral rewards yet.</td></tr>';
+                    }
+                }
+
+                window.onload = fetchAdminData;
+            </script>
+        </body>
+        </html>
+    `;
+    res.send(adminHtml);
+});
