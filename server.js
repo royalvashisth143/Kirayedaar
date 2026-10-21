@@ -43,7 +43,7 @@ db.serialize(() => {
 function generateReferralCode(name) {
     const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
     const randomHex = crypto.randomBytes(2).toString('hex').toUpperCase();
-    return `${cleanName \vert{}\vert{} 'USR'}-${randomHex}`;
+    return `${cleanName || 'USR'}-${randomHex}`;
 }
 
 // ---------------- USER ROUTES ---------------- //
