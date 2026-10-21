@@ -43,10 +43,10 @@ db.serialize(() => {
 function generateReferralCode(name) {
     const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
     const randomHex = crypto.randomBytes(2).toString('hex').toUpperCase();
-    return `${cleanName || 'USR'}-${randomHex}`;
+    return `${cleanName \vert{}\vert{} 'USR'}-${randomHex}`;
 }
 
-// ---------------- ROUTES ---------------- //
+// ---------------- USER ROUTES ---------------- //
 
 // 1. Referral Link Click Handler (`/ref/CODE`)
 app.get('/ref/:code', (req, res) => {
@@ -80,8 +80,8 @@ app.post('/api/signup', (req, res) => {
 
                 if (referredById) {
                     const rewardAmount = 50.0; 
-                    db.run(`INSERT INTO referral_rewards (referrer_id, referee_id, reward_amount) VALUES (?, ?, ?)`, 
-                        [referredById, newUserId, rewardAmount]);
+                    db.run(`INSERT INTO referral_rewards (referrer_id, referee_id, reward_amount, status) VALUES (?, ?, ?, ?)`, 
+                        [referredById, newUserId, rewardAmount, 'Approved']);
                     
                     db.run(`UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?`, [rewardAmount, referredById]);
                 }
@@ -113,7 +113,30 @@ app.get('/api/user/:id', (req, res) => {
     });
 });
 
-// 4. Frontend UI
+
+// ---------------- ADMIN API ROUTES ---------------- //
+
+// Get all data for admin dashboard
+app.get('/api/admin/data', (req, res) => {
+    db.all(`SELECT u.id, u.name, u.email, u.referral_code, u.wallet_balance, 
+            (SELECT name FROM users WHERE id = u.referred_by) as referred_by_name 
+            FROM users u ORDER BY u.id DESC`, [], (err, users) => {
+        
+        db.all(`SELECT r.id, 
+                (SELECT name FROM users WHERE id = r.referrer_id) as referrer_name, 
+                (SELECT name FROM users WHERE id = r.referee_id) as referee_name, 
+                r.reward_amount, r.status 
+                FROM referral_rewards r ORDER BY r.id DESC`, [], (err, rewards) => {
+            
+            res.json({ users, rewards });
+        });
+    });
+});
+
+
+// ---------------- FRONTEND (USER & ADMIN UI) ---------------- //
+
+// User Home / Signup / Dashboard UI
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -121,7 +144,7 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Referral System Live Test</title>
+            <title>Referral System</title>
             <style>
                 body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
                 .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
@@ -133,6 +156,7 @@ app.get('/', (req, res) => {
                 button:hover { background: #0056b3; }
                 .card { background: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px; }
                 .hidden { display: none; }
+                .admin-link { text-align: center; margin-top: 20px; }
             </style>
         </head>
         <body>
@@ -166,6 +190,10 @@ app.get('/', (req, res) => {
                         </ul>
                     </div>
                     <button onclick="logout()" style="background: #dc3545; margin-top: 15px;">Logout / Switch User</button>
+                </div>
+
+                <div class="admin-link">
+                    <a href="/admin" target="_blank" style="color: #6c757d; text-decoration: none; font-size: 14px;">🔒 Go to Admin Panel</a>
                 </div>
             </div>
 
@@ -245,7 +273,112 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// Admin Panel UI Route (`/admin`)
+app.get('/admin', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Admin Panel - Referral Management</title>
+            <style>
+                body { font-family: Arial, sans-serif; background: #f8f9fa; margin: 0; padding: 20px; color: #333; }
+                .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+                h2 { color: #343a40; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+                h3 { margin-top: 30px; color: #007bff; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; font-size: 14px; }
+                th { background-color: #007bff; color: white; }
+                tr:nth-child(even) { background-color: #f2f2f2; }
+                .badge { padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #28a745; color: white; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>🛠️ Admin Dashboard - Referral Management</h2>
+
+                <h3>All Registered Users</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Referral Code</th>
+                            <th>Referred By</th>
+                            <th>Wallet Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table">
+                        <tr><td colspan="6" style="text-align:center;">Loading users...</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Referral Transactions & Rewards</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Referrer (Jisne Invite Kiya)</th>
+                            <th>Referee (Naya User)</th>
+                            <th>Reward Amount</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rewards-table">
+                        <tr><td colspan="5" style="text-align:center;">Loading rewards...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <script>
+                async function fetchAdminData() {
+                    const response = await fetch('/api/admin/data');
+                    const data = await response.json();
+
+                    // Users Table populate karein
+                    const usersEl = document.getElementById('users-table');
+                    if(data.users.length > 0) {
+                        usersEl.innerHTML = data.users.map(u => \`
+                            <tr>
+                                <td>\${u.id}</td>
+                                <td>\${u.name}</td>
+                                <td>\${u.email}</td>
+                                <td><code>\${u.referral_code}</code></td>
+                                <td>\${u.referred_by_name || 'Direct Signup'}</td>
+                                <td>₹\${u.wallet_balance}</td>
+                            </tr>
+                        \`).join('');
+                    } else {
+                        usersEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">No users found.</td></tr>';
+                    }
+
+                    // Rewards Table populate karein
+                    const rewardsEl = document.getElementById('rewards-table');
+                    if(data.rewards.length > 0) {
+                        rewardsEl.innerHTML = data.rewards.map(r => \`
+                            <tr>
+                                <td>\${r.id}</td>
+                                <td>\<b>\${r.referrer_name}</b></td>
+                                <td>\${r.referee_name}</td>
+                                <td>₹\${r.reward_amount}</td>
+                                <td><span class="badge">\${r.status}</span></td>
+                            </tr>
+                        \`).join('');
+                    } else {
+                        rewardsEl.innerHTML = '<tr><td colspan="5" style="text-align:center;">No referral rewards yet.</td></tr>';
+                    }
+                }
+
+                window.onload = fetchAdminData;
+            </script>
+        </body>
+        </html>
+    `);
 });
-  
+
+app.listen(PORT, () => {
+    console.log(`Server is running on port `${PORT}`);
+});
+        
