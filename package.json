@@ -1,7 +1,7 @@
 {
   "name": "kiyayedaar",
   "version": "1.0.0",
-  "description": "Complete Referral & Tracking System",
+  "description": "Live Your Home Dreams With Us",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
