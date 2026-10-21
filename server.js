@@ -19,7 +19,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     else console.log('Connected to SQLite Database.');
 });
 
-// Tables Creation with Advanced Fields
+// Tables Creation
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,19 +49,14 @@ function generateReferralCode(name) {
 
 // ---------------- USER ROUTES & TRACKING ---------------- //
 
-// 1. Referral Link Click Tracking (Analytics)
 app.get('/ref/:code', (req, res) => {
     const code = req.params.code;
-    
-    // Track click count in database
     db.run("UPDATE users SET click_count = click_count + 1 WHERE referral_code = ?", [code], (err) => {
-        // Set cookie for 7 days
         res.cookie('ref_code', code, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: true });
         res.redirect('/');
     });
 });
 
-// 2. Signup API Endpoint with Fraud Prevention
 app.post('/api/signup', (req, res) => {
     const name = req.body.name;
     const email = req.body.email;
@@ -86,10 +81,8 @@ app.post('/api/signup', (req, res) => {
 
                 const newUserId = this.lastID;
 
-                // Fraud Prevention: Self-referral check
                 if (referredById && referredById !== newUserId) {
                     const rewardAmount = 50.0; 
-                    // Initial status is Pending, admin can approve/pay
                     db.run("INSERT INTO referral_rewards (referrer_id, referee_id, reward_amount, status) VALUES (?, ?, ?, ?)", 
                         [referredById, newUserId, rewardAmount, 'Pending']);
                 }
@@ -106,7 +99,6 @@ app.post('/api/signup', (req, res) => {
     });
 });
 
-// 3. Get User Stats & Analytics API
 app.get('/api/user/:id', (req, res) => {
     const userId = req.params.id;
     db.get("SELECT id, name, email, referral_code, wallet_balance, click_count FROM users WHERE id = ?", [userId], (err, user) => {
@@ -118,10 +110,8 @@ app.get('/api/user/:id', (req, res) => {
     });
 });
 
-
 // ---------------- ADMIN MANAGEMENT API ROUTES ---------------- //
 
-// Get all data for admin analytics and management
 app.get('/api/admin/data', (req, res) => {
     db.all("SELECT u.id, u.name, u.email, u.referral_code, u.click_count, u.wallet_balance, (SELECT name FROM users WHERE id = u.referred_by) as referred_by_name FROM users u ORDER BY u.id DESC", [], (err, users) => {
         db.all("SELECT r.id, r.status, r.reward_amount, (SELECT name FROM users WHERE id = r.referrer_id) as referrer_name, (SELECT name FROM users WHERE id = r.referee_id) as referee_name, (SELECT id FROM users WHERE id = r.referrer_id) as referrer_id FROM referral_rewards r ORDER BY r.id DESC", [], (err, rewards) => {
@@ -130,15 +120,13 @@ app.get('/api/admin/data', (req, res) => {
     });
 });
 
-// Admin action: Update Reward Status (Pending -> Approved / Paid / Rejected)
 app.post('/api/admin/update-reward', (req, res) => {
     const rewardId = req.body.rewardId;
-    const newStatus = req.body.status; // Approved, Paid, Rejected
+    const newStatus = req.body.status;
 
     db.get("SELECT * FROM referral_rewards WHERE id = ?", [rewardId], (err, reward) => {
         if (!reward) return res.status(404).json({ error: "Reward not found" });
 
-        // If changing to Paid or Approved, update wallet balance if not already paid
         db.run("UPDATE referral_rewards SET status = ? WHERE id = ?", [newStatus, rewardId], function(err) {
             if (newStatus === 'Paid' && reward.status !== 'Paid') {
                 db.run("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?", [reward.reward_amount, reward.referrer_id]);
@@ -147,7 +135,6 @@ app.post('/api/admin/update-reward', (req, res) => {
         });
     });
 });
-
 
 // ---------------- FRONTEND UI (USER DASHBOARD) ---------------- //
 
@@ -306,7 +293,6 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-
 // ---------------- ADMIN MANAGEMENT PANEL UI ---------------- //
 
 app.get('/admin', (req, res) => {
@@ -386,7 +372,6 @@ app.get('/admin', (req, res) => {
                     const response = await fetch('/api/admin/data');
                     const data = await response.json();
 
-                    // Users Table
                     const usersEl = document.getElementById('users-table');
                     if(data.users.length > 0) {
                         let usersHtml = '';
@@ -407,7 +392,6 @@ app.get('/admin', (req, res) => {
                         usersEl.innerHTML = '<tr><td colspan="7" style="text-align:center;">No users found.</td></tr>';
                     }
 
-                    // Rewards Table with Status Management Dropdown
                     const rewardsEl = document.getElementById('rewards-table');
                     if(data.rewards.length > 0) {
                         let rewardsHtml = '';
@@ -418,4 +402,11 @@ app.get('/admin', (req, res) => {
                                 '<td><strong>' + r.referrer_name + '</strong></td>' +
                                 '<td>' + r.referee_name + '</td>' +
                                 '<td>₹' + r.reward_amount + '</td>' +
-                                '
+                                '<td>' +
+                                    '<select id="status-' + r.id + '">' +
+                                        '<option value="Pending" ' + (r.status === 'Pending' ? 'selected' : '') + '>Pending</option>' +
+                                        '<option value="Approved" ' + (r.status === 'Approved' ? 'selected' : '') + '>Approved</option>' +
+                                        '<option value="Paid" ' + (r.status === 'Paid' ? 'selected' : '') + '>Paid</option>' +
+                                        '<option value="Rejected" ' + (r.status === 'Rejected' ? 'selected' : '') + '>Rejected</option>' +
+                                    '</select> ' +
+                                 
